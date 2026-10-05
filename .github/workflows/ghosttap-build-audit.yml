@@ -29,37 +29,114 @@ jobs:
           $dest = Join-Path $env:GITHUB_WORKSPACE "extracted"
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           Expand-Archive -Path $zip -DestinationPath $dest -Force
-          Get-ChildItem -Path $dest -Recurse | Select-Object FullName
 
-      - name: Locate solution
-        id: locate
+      - name: Apply verified source fixes
         shell: pwsh
         run: |
-          $sln = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\extracted" -Filter "*.sln" -Recurse | Select-Object -First 1
-          if (-not $sln) { throw "No solution found after extraction." }
-          "solution=$($sln.FullName)" >> $env:GITHUB_OUTPUT
+          $root = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\extracted" -Directory | Where-Object { Test-Path (Join-Path $_.FullName "GhostTap.Unified.csproj") } | Select-Object -First 1
+          if (-not $root) { throw "GhostTap source root not found." }
+          $root = $root.FullName
+
+          function Replace-Exact([string]$Path, [string]$Old, [string]$New) {
+            $text = Get-Content -Raw -LiteralPath $Path
+            if (-not $text.Contains($Old)) { throw "Expected source text not found in $Path" }
+            Set-Content -LiteralPath $Path -Value $text.Replace($Old, $New) -Encoding utf8NoBOM
+          }
+
+          Replace-Exact (Join-Path $root "Services\DatabaseService.cs") "await using var transaction = await connection.BeginTransactionAsync().ConfigureAwait(false);" "await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync().ConfigureAwait(false);"
+          Replace-Exact (Join-Path $root "Services\WhatsAppParser.cs") "var now = createdAt.ToLocalTime();" "var now = createdAt.ToLocalTime().DateTime;"
+
+          $main = Join-Path $root "UI\MainForm.cs"
+          $mainText = Get-Content -Raw -LiteralPath $main
+          if ($mainText -notmatch "private static void OpenFolder\(") {
+            $marker = @"
+    private static void OpenUri(string uri)
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri) { UseShellExecute = true }); } catch { }
+    }
+"@
+            $replacement = @"
+    private static void OpenFolder(string path)
+    {
+        try
+        {
+            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"""$path""")
+            {
+                UseShellExecute = true
+            });
+        }
+        catch { }
+    }
+
+    private static void OpenUri(string uri)
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri) { UseShellExecute = true }); } catch { }
+    }
+"@
+            if (-not $mainText.Contains($marker)) { throw "OpenUri marker not found in MainForm.cs" }
+            Set-Content -LiteralPath $main -Value $mainText.Replace($marker, $replacement) -Encoding utf8NoBOM
+          }
+
+          $testProject = Join-Path $root "tests\GhostTap.Unified.SmokeTests.csproj"
+          $testText = Get-Content -Raw -LiteralPath $testProject
+          if ($testText -notmatch "<Platforms>x64</Platforms>") {
+            $nl = [Environment]::NewLine
+            $testText = $testText.Replace("    <EnableWindowsTargeting>true</EnableWindowsTargeting>", "    <EnableWindowsTargeting>true</EnableWindowsTargeting>" + $nl + "    <Platforms>x64</Platforms>" + $nl + "    <PlatformTarget>x64</PlatformTarget>")
+            Set-Content -LiteralPath $testProject -Value $testText -Encoding utf8NoBOM
+          }
+
+          $program = Join-Path $root "Program.cs"
+          $programText = Get-Content -Raw -LiteralPath $program
+          if ($programText -notmatch "Application\.SetHighDpiMode") {
+            $nl = [Environment]::NewLine
+            $programText = $programText.Replace("        ApplicationConfiguration.Initialize();", "        Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);" + $nl + "        ApplicationConfiguration.Initialize();")
+            Set-Content -LiteralPath $program -Value $programText -Encoding utf8NoBOM
+          }
+
+          $manifest = Join-Path $root "app.manifest"
+          $manifestText = Get-Content -Raw -LiteralPath $manifest
+          $manifestText = [regex]::Replace($manifestText, "\s*<dpiAware[^>]*>true/pm</dpiAware>\s*", [Environment]::NewLine)
+          $manifestText = [regex]::Replace($manifestText, "\s*<dpiAwareness[^>]*>PerMonitorV2</dpiAwareness>\s*", [Environment]::NewLine)
+          Set-Content -LiteralPath $manifest -Value $manifestText -Encoding utf8NoBOM
+
+          Get-ChildItem -Path $root -Directory -Filter bin -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          Get-ChildItem -Path $root -Directory -Filter obj -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: Restore
         shell: pwsh
-        working-directory: ${{ github.workspace }}
         run: |
-          dotnet restore "${{ steps.locate.outputs.solution }}"
+          $sln = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\extracted" -Filter "*.sln" -Recurse | Select-Object -First 1
+          if (-not $sln) { throw "No solution found." }
+          dotnet restore $sln.FullName
 
       - name: Build Release
         shell: pwsh
         run: |
-          dotnet build "${{ steps.locate.outputs.solution }}" -c Release --no-restore --nologo
+          $sln = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\extracted" -Filter "*.sln" -Recurse | Select-Object -First 1
+          dotnet build $sln.FullName -c Release --no-restore --nologo
 
-      - name: Create extracted source archive
+      - name: Run smoke tests
+        shell: pwsh
+        run: |
+          $tests = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\extracted" -Filter "GhostTap.Unified.SmokeTests.csproj" -Recurse | Select-Object -First 1
+          if (-not $tests) { throw "Smoke test project not found." }
+          dotnet run --project $tests.FullName -c Release --no-restore
+
+      - name: Create corrected source archive
         if: always()
         shell: pwsh
         run: |
-          Compress-Archive -Path "$env:GITHUB_WORKSPACE\extracted\*" -DestinationPath "$env:GITHUB_WORKSPACE\ghosttap-extracted-source.zip" -Force
+          $root = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\extracted" -Directory | Where-Object { Test-Path (Join-Path $_.FullName "GhostTap.Unified.csproj") } | Select-Object -First 1
+          if ($root) {
+            Get-ChildItem -Path $root.FullName -Directory -Filter bin -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            Get-ChildItem -Path $root.FullName -Directory -Filter obj -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          Compress-Archive -Path "$env:GITHUB_WORKSPACE\extracted\*" -DestinationPath "$env:GITHUB_WORKSPACE\GhostTap_Unified_WhatsApp_Watch_VSCode_1.3.3_FINAL.zip" -Force
 
-      - name: Upload build artifacts
+      - name: Upload corrected project
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ghosttap-build-audit
-          path: |
-            ghosttap-extracted-source.zip
+          name: GhostTap-1.3.3-FINAL
+          path: GhostTap_Unified_WhatsApp_Watch_VSCode_1.3.3_FINAL.zip
