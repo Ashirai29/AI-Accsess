@@ -19,13 +19,13 @@ Replace-Exact (Join-Path $Root "Services\WhatsAppParser.cs") "var now = createdA
 $main = Join-Path $Root "UI\MainForm.cs"
 $mainText = Get-Content -Raw -LiteralPath $main
 if ($mainText -notmatch "private static void OpenFolder\(") {
-    $openFolder = @"
+    $openFolder = @'
     private static void OpenFolder(string path)
     {
         try
         {
             if (!Directory.Exists(path)) Directory.CreateDirectory(path);
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", ('"{0}"' -f path))
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{path}\"")
             {
                 UseShellExecute = true
             });
@@ -33,7 +33,7 @@ if ($mainText -notmatch "private static void OpenFolder\(") {
         catch { }
     }
 
-"@
+'@
     $pattern = "(?m)^\s*private static void OpenUri\(string uri\)"
     if ($mainText -notmatch $pattern) {
         throw "OpenUri method not found in MainForm.cs"
