@@ -19,13 +19,7 @@ Replace-Exact (Join-Path $Root "Services\WhatsAppParser.cs") "var now = createdA
 $main = Join-Path $Root "UI\MainForm.cs"
 $mainText = Get-Content -Raw -LiteralPath $main
 if ($mainText -notmatch "private static void OpenFolder\(") {
-    $marker = @"
-    private static void OpenUri(string uri)
-    {
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri) { UseShellExecute = true }); } catch { }
-    }
-"@
-    $replacement = @"
+    $openFolder = @"
     private static void OpenFolder(string path)
     {
         try
@@ -39,15 +33,13 @@ if ($mainText -notmatch "private static void OpenFolder\(") {
         catch { }
     }
 
-    private static void OpenUri(string uri)
-    {
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri) { UseShellExecute = true }); } catch { }
-    }
 "@
-    if (-not $mainText.Contains($marker)) {
-        throw "OpenUri marker not found in MainForm.cs"
+    $pattern = "(?m)^\s*private static void OpenUri\(string uri\)"
+    if ($mainText -notmatch $pattern) {
+        throw "OpenUri method not found in MainForm.cs"
     }
-    Set-Content -LiteralPath $main -Value $mainText.Replace($marker, $replacement) -Encoding utf8NoBOM
+    $mainText = [regex]::Replace($mainText, $pattern, $openFolder + "    private static void OpenUri(string uri)", 1)
+    Set-Content -LiteralPath $main -Value $mainText -Encoding utf8NoBOM
 }
 
 $testProject = Join-Path $Root "tests\GhostTap.Unified.SmokeTests.csproj"
