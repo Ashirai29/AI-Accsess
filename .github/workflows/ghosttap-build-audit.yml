@@ -35,7 +35,7 @@ jobs:
         run: |
           $root = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\extracted" -Directory | Where-Object { Test-Path (Join-Path $_.FullName "GhostTap.Unified.csproj") } | Select-Object -First 1
           if (-not $root) { throw "GhostTap source root not found." }
-          & (Join-Path $env:GITHUB_WORKSPACE "extracted\GhostTap-Unified-release\scripts\patch_ghosttap_1.3.3.ps1") -Root $root.FullName
+          & (Join-Path $env:GITHUB_WORKSPACE "scripts\patch_ghosttap_1.3.3.ps1") -Root $root.FullName
 
       - name: Restore
         shell: pwsh
