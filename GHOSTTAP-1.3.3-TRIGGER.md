@@ -1,0 +1,1 @@
+Windows build audit trigger for GhostTap 1.3.3.
