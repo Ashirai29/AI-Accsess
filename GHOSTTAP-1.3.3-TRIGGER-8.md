@@ -1,0 +1,1 @@
+Trigger for final warning-free GhostTap 1.3.3 Windows validation.
