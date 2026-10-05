@@ -64,6 +64,27 @@ $manifestText = [regex]::Replace($manifestText, "\s*<dpiAware[^>]*>true/pm</dpiA
 $manifestText = [regex]::Replace($manifestText, "\s*<dpiAwareness[^>]*>PerMonitorV2</dpiAwareness>\s*", [Environment]::NewLine)
 Set-Content -LiteralPath $manifest -Value $manifestText -Encoding utf8NoBOM
 
+# Final release metadata and regression fixes.
+Replace-Exact (Join-Path $Root "GhostTap.Unified.csproj") "<Version>1.3.2</Version>" "<Version>1.3.3</Version>"
+Replace-Exact (Join-Path $Root "GhostTap.Unified.csproj") "<AssemblyVersion>1.3.2.0</AssemblyVersion>" "<AssemblyVersion>1.3.3.0</AssemblyVersion>"
+Replace-Exact (Join-Path $Root "GhostTap.Unified.csproj") "<FileVersion>1.3.2.0</FileVersion>" "<FileVersion>1.3.3.0</FileVersion>"
+Replace-Exact (Join-Path $Root "packaging\Package.appxmanifest") "Version="1.3.2.0"" "Version="1.3.3.0""
+Replace-Exact (Join-Path $Root "scripts\Verify.ps1") "release 1.3.2" "release 1.3.3"
+Replace-Exact (Join-Path $Root "scripts\static_verify.py") "<Version>1.3.2</Version>" "<Version>1.3.3</Version>"
+Replace-Exact (Join-Path $Root "scripts\static_verify.py") "Project version is not 1.3.2." "Project version is not 1.3.3."
+Replace-Exact (Join-Path $Root "scripts\static_verify.py") "Version="1.3.2.0"" "Version="1.3.3.0""
+Replace-Exact (Join-Path $Root "scripts\static_verify.py") "MSIX manifest version is not 1.3.2.0." "MSIX manifest version is not 1.3.3.0."
+
+$smoke = Join-Path $Root "tests\Program.cs"
+$smokeText = Get-Content -Raw -LiteralPath $smoke
+$smokeText = $smokeText.Replace('Assert(parsed!.ToString().Equals(uri, StringComparison.OrdinalIgnoreCase), "Recovered URI did not match the original.");', 'Assert(parsed!.AbsoluteUri.Equals(valid!.AbsoluteUri, StringComparison.OrdinalIgnoreCase), "Recovered URI did not match the canonical original URI.");')
+Set-Content -LiteralPath $smoke -Value $smokeText -Encoding utf8NoBOM
+
+$watcher = Join-Path $Root "Services\WhatsAppWatcherService.cs"
+$watcherText = Get-Content -Raw -LiteralPath $watcher
+$watcherText = $watcherText.Replace("    private bool _enabled;" + [Environment]::NewLine, "")
+Set-Content -LiteralPath $watcher -Value $watcherText -Encoding utf8NoBOM
+
 Get-ChildItem -Path $Root -Directory -Filter bin -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 Get-ChildItem -Path $Root -Directory -Filter obj -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
