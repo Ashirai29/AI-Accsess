@@ -82,7 +82,7 @@ Set-Content -LiteralPath $smoke -Value $smokeText -Encoding utf8NoBOM
 
 $watcher = Join-Path $Root "Services\WhatsAppWatcherService.cs"
 $watcherText = Get-Content -Raw -LiteralPath $watcher
-$watcherText = $watcherText.Replace("    private bool _enabled;" + [Environment]::NewLine, "")
+$watcherText = [regex]::Replace($watcherText, "(?m)^\s*private bool _enabled;\s*\r?\n", "")
 Set-Content -LiteralPath $watcher -Value $watcherText -Encoding utf8NoBOM
 
 Get-ChildItem -Path $Root -Directory -Filter bin -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
