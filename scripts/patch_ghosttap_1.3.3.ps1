@@ -25,7 +25,7 @@ if ($mainText -notmatch "private static void OpenFolder\(") {
         try
         {
             if (!Directory.Exists(path)) Directory.CreateDirectory(path);
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"""$path""")
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", ('"{0}"' -f path))
             {
                 UseShellExecute = true
             });
